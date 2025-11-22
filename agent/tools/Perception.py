@@ -389,7 +389,7 @@ def calculate_bbox_area(bboxes, gsd=None):
 def get_model_output(model_name: str, input_image_path: str, **args):
     import pandas as pd
 
-    results = pd.read_csv('/mnt/dhwfile/zhuleqi/ICLR/Earth-Agent/benchmark/model_results.csv', sep=';')
+    results = pd.read_csv('/root/autodl-tmp/Earth-Agent/benchmark/model_results.csv', sep=';')
     result = None
     try:
         # classification

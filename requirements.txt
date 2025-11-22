@@ -1,21 +1,6 @@
-# Earth Agent Evaluation Framework Requirements
-# Based on agentlego conda environment
-
-# Core packages
-addict==2.4.0
-affine==2.4.0
-agentscope==0.1.6
-aiofiles==24.1.0
-aiohappyeyeballs==2.6.1
-aiohttp==3.12.15
-aiosignal==1.4.0
-annotated-types==0.7.0
-anyio==4.10.0
-attrs==25.3.0
-
-# Geospatial libraries
-
-
+# Note: GDAL requires system dependencies. Install with:
+apt-get install gdal-bin libgdal-dev
+conda install gdal=3.4.1 -c conda-forge
 
 # LangChain and MCP
 fastmcp==2.11.3
@@ -32,21 +17,16 @@ langsmith==0.4.21
 mcp==1.12.4
 
 # Scientific computing
-numpy
+numpy==1.24.4
 scipy==1.15.3
 pandas==2.3.1
 scikit-learn==1.7.1
 scikit-image==0.25.2
 statsmodels==0.14.5
 pyproj==3.7.1
-apt-get install gdal-bin libgdal-dev
-apt-get install --only-upgrade libgdal-dev
-pip install opencv-python
-pip install rasterio==1.4.3
-pip install ruptures
-pip install scikit-image
-pip install statsmodels
-conda install gdal=3.4.1 -c conda-forge
+opencv-python==4.8.1.78
+rasterio==1.4.3
+ruptures
 
 
 # Visualization
