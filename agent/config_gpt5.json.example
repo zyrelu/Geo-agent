@@ -43,12 +43,12 @@
     },
     "models": [
         {
-            "config_name": "kimi-k2-0905-preview",
+            "config_name": "gpt-5",
             "model_type": "openai_chat",
-            "model_name": "kimi-k2-0905-preview",
-            "api_key": "sk-sAOaIuaTbzermaJnJJAZzNnLdqQ38zxC2cYawqEQZ7zfTBE5",
+            "model_name": "gpt-5",
+            "api_key": "${OPENAI_API_KEY}",
             "client_args": {
-                "base_url": "http://35.220.164.252:3888/v1/"
+                "base_url": "${OPENAI_BASE_URL}"
             },
             "generate_args": {}
         }

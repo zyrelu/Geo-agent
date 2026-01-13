@@ -23,9 +23,10 @@
 <!-- [![GitHub issues](https://img.shields.io/github/issues/opendatalab/FakeVLM?color=critical&label=Issues)](https://github.com/opendatalab/FakeVLM/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/opendatalab/FakeVLM?style=social)](https://github.com/opendatalab/FakeVLM/stargazers) -->
 
-[![arXiv](https://img.shields.io/badge/Arxiv-2503.14905-AD1C18.svg?logo=arXiv)](https://arxiv.org/pdf/2509.23141) 
+[![arXiv](https://img.shields.io/badge/Arxiv-2509.23141-AD1C18.svg?logo=arXiv)](https://arxiv.org/pdf/2509.23141) 
 [![](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fopendatalab%2FFakeVLM&count_bg=%23C25AE6&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=Visitor&edge_flat=false)](https://hits.seeyoufarm.com)
 [![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-yellow)](https://huggingface.co/datasets/Sssunset/Earth-Bench)
+[![Report](https://img.shields.io/badge/WeChat-%40%E6%9C%BA%E5%99%A8%E4%B9%8B%E5%BF%83-black%3Flogo%3Dwechat%26amp%3BlogoColor%3D07C160)](https://mp.weixin.qq.com/s/-rOj8w2Gv4Lf9baIJyoGoA)
 </div>
 
 </div>
@@ -33,6 +34,7 @@ This repository contains the evaluation framework for Earth Agent: Unlocking the
 
 
 ## 📰 News 
+- **[2025.10.27]**: 🎉 We are excited to announce that Synced Review has reported on our article. You can find more details [here](https://www.jiqizhixin.com/articles/2025-10-27-7).
 - **[2025.10.17]**: 🤗 We are excited to release the Earth-Bench dataset. Check out [on huggingface](https://huggingface.co/datasets/Sssunset/Earth-Bench).
 - **[2025.9.27]**: 🔥 We have released **Earth-Agent: Unlocking the Full Landscape of Earth Observation with Agents**. Check out the [paper](https://arxiv.org/pdf/2509.23141). We present Earth-Agent and Earth-Bench.
 
@@ -59,26 +61,6 @@ We introduce Earth-Agent, an EO agent framework cast as a **ReAct-style** Partia
 ### 1. Download Dataset from Hugging Face
 
 Download the benchmark dataset from Hugging Face:
-
-<!-- ```bash
-# Install huggingface-hub if not already installed
-pip install huggingface-hub
-
-# Download the dataset
-huggingface-cli download wqjklej/safkhj --local-dir ./benchmark/data --repo-type dataset
-``` -->
-
-<!-- Alternatively, you can download manually:
-
-```python
-from huggingface_hub import snapshot_download
-
-snapshot_download(
-    repo_id="wqjklej/safkhj",
-    repo_type="dataset",
-    local_dir="./benchmark/data"
-)
-``` -->
 
 ```bash
 # Install huggingface-hub if not already installed
@@ -153,20 +135,11 @@ The framework supports multiple models. Configuration files are located in `agen
 Run evaluation for a single model:
 
 ```bash
-# Example: Evaluate GPT-5 model
-python main.py --config agent/config_gpt5.json --mode evaluation
+# Zero-shot eval: Move langchain_gpt5.py at Earth-Agent/langchain_gpt5.py
+python langchain_gpt5.py
 
-# Example: Evaluate DeepSeek model
-python main.py --config agent/config_deepseek.json --mode evaluation
-```
-
-### 2. Batch Model Evaluation
-
-Run evaluation for multiple models:
-
-```bash
-# Run all configured models
-python batch_evaluate.py --config_dir agent/ --output_dir ./evaluate_langchain
+# Training Free Evolution eval: 
+bash task_gpt.sh
 ```
 
 ## 📊 Evaluation Metrics
@@ -213,7 +186,7 @@ evaluate_langchain/
 └── ...
 ```
 
-### 4. Batch Evaluation Results
+### 4. Evaluation Results
 
 Combined results for all models:
 

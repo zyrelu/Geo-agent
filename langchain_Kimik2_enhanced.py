@@ -1,19 +1,25 @@
 import os
 os.environ["GTIFF_SRS_SOURCE"]="EPSG"
+os.environ['GDAL_DATA'] = '/root/miniconda3/envs/earthagent/share/gdal'
+os.environ["PROJ_LIB"]="/root/miniconda3/envs/earthagent/lib/python3.10/site-packages/pyproj/proj_dir/share/proj"
+
 import json
 import logging
 import asyncio
+import argparse
 from enum import auto
 from tqdm import tqdm
 from pathlib import Path
 from copy import deepcopy
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+import time
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
+
 
 # Pprint for debugging
 from pprint import pprint
@@ -25,28 +31,78 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logger = None
 temp_dir_path = None
 
-# Configuration
-model_name = 'interns1'
-autoplanning = False
-sys_prompt = '''
-You are a geoscientist, and you need to use tools to answer multiple-choice questions about Earth observation data analysis. Note that if a tool returns an error, you can only try again once. Ultimately, you only need to explicitly tell me the correct choice.
-ATTENTION:
-1. When a tool returns "Result saved at /path/to/file", you must use the full returned path "/path/to/file" in all subsequent tool calls.
-2. For each question, you must provide the choice you think is most appropriate.Don't gibe me another format. Your final answer format must be:
-<Answer>Your choice<Answer>
-'''
+# Configuration - will be loaded from enhanced config
+model_name = 'Kimik2'
+autoplanning = True
+num_experiences = 0   # Number of experiences loaded
+sys_prompt = None     # Will be loaded from enhanced config
 
 
-def init_global_params():
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="Evaluate Enhanced Earth-Agent with learned experiences"
+    )
+    parser.add_argument(
+        '--enhanced_config',
+        type=str,
+        required=True,
+        help='Path to enhanced config JSON with learned experiences'
+    )
+    parser.add_argument(
+        '--batch_dir',
+        type=str,
+        default=None,
+        help='Batch directory for storing results (e.g., batch_001)'
+    )
+    parser.add_argument(
+        '--question_ids',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Specific question IDs to evaluate in this batch'
+    )
+    return parser.parse_args()
+
+
+def load_enhanced_config(enhanced_config_path):
+    """Load enhanced configuration with learned experiences"""
+    global sys_prompt, num_experiences
+
+    print(f"\n{'='*80}")
+    print("Loading Enhanced Configuration")
+    print(f"{'='*80}")
+
+    with open(enhanced_config_path, 'r') as f:
+        enhanced_config = json.load(f)
+
+    # Extract system prompt with experiences
+    sys_prompt = enhanced_config['system_prompt']
+    num_experiences = enhanced_config['metadata']['num_experiences']
+
+    print(f"Experiment ID: {enhanced_config['exp_id']}")
+    print(f"Number of experiences loaded: {num_experiences}")
+    print(f"Generated at: {enhanced_config['metadata']['generated_at']}")
+    print(f"{'='*80}\n")
+
+    return enhanced_config
+
+
+def init_global_params(batch_dir=None):
     """Initialize global parameters and logging"""
     global temp_dir_path, logger
-    
+
     if temp_dir_path is None:
-        temp_dir_path = Path('./evaluate_langchain/{}_{}_{}'.format(
-            model_name, 
-            'AP' if autoplanning else "IF", 
-            datetime.now().strftime('%y-%m-%d_%H-%M')
-        )).absolute()
+        if batch_dir:
+            # Use provided batch directory
+            temp_dir_path = Path(batch_dir).absolute()
+        else:
+            # Use default directory structure
+            temp_dir_path = Path('./evaluate_langchain/{}_AP_enhanced_{}exp_{}'.format(
+                model_name,
+                num_experiences,
+                datetime.now().strftime('%y-%m-%d_%H-%M')
+            )).absolute()
     temp_dir_path.mkdir(parents=True, exist_ok=True)
 
     class JsonFormatter(logging.Formatter):
@@ -63,22 +119,18 @@ def init_global_params():
     logger = logging.getLogger("text_logger")
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(
-        temp_dir_path / "{}_{}_langchain.log".format(
-            model_name, 'AP' if autoplanning else "IF"
-        )
+        temp_dir_path / "{}_AP_enhanced_langchain.log".format(model_name)
     )
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
-    
+
     return temp_dir_path, logger
 
 
 def init_chat_logger():
     """Initialize chat logger for .chat file like AgentScope"""
     global temp_dir_path
-    chat_log_path = temp_dir_path / "{}_{}_langchain.chat".format(
-        model_name, 'AP' if autoplanning else "IF"
-    )
+    chat_log_path = temp_dir_path / "{}_AP_enhanced_langchain.chat".format(model_name)
     return chat_log_path
 
 
@@ -105,7 +157,7 @@ def save_chat_message(chat_log_path, message_data):
         f.write(json.dumps(chat_record, ensure_ascii=False) + '\n')
 
 
-def load_langchain_config(config_path='./agent/config_interns1.json'):
+def load_langchain_config(config_path='./agent/config_Kimik2.json'):
     """Load configuration and initialize LangChain components"""
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -156,7 +208,6 @@ async def create_langchain_agent(llm, mcp_servers):
     try:
         # Get tools from all MCP servers
         tools = await client.get_tools()
-        # import pdb; pdb.set_trace()
         print(f"Successfully loaded {len(tools)} tools from MCP servers")
         
         # Create ReAct agent
@@ -212,7 +263,7 @@ def extract_answer_from_response(response):
     return "No answer found"
 
 
-async def handle_question(agent, question, chat_log_path):
+async def handle_question(agent, question, chat_log_path=None):
     """Handle a single question with the LangChain agent"""
     try:
         # Prepare query
@@ -230,16 +281,7 @@ async def handle_question(agent, question, chat_log_path):
         
         print(f"\n--- Processing Question {question['question_id']} ---")
         print(f"Query: {query[:200]}...")
-        
-        # Save user message to chat log
-        user_message = {
-            "name": "user",
-            "role": "user", 
-            "content": full_query,
-            "metadata": {"question_id": question['question_id']}
-        }
-        save_chat_message(chat_log_path, user_message)
-        
+
         # Invoke agent with configuration to prevent infinite loops
         response = await agent.ainvoke(
             {"messages": [HumanMessage(content=full_query)]},
@@ -308,66 +350,8 @@ async def handle_question(agent, question, chat_log_path):
                         }]
                     })
         
-        # Save detailed messages to .chat file (AgentScope format)
-        for message in response.get("messages", []):
-            if hasattr(message, 'type'):
-                if message.type == 'human':
-                    # Skip user message for .chat as it's already saved
-                    continue
         
-                elif message.type == 'ai':
-                    # Assistant message - handle both thinking and tool calls for .chat file
-                    assistant_chat_content = []
-                    
-                    # First check if there's thinking content (text before tool calls)
-                    if message.content and message.content.strip():
-                        assistant_chat_content.append({
-                            "type": "text",
-                            "text": message.content
-                        })
-                    
-                    # Then check for tool calls
-                    if hasattr(message, 'additional_kwargs') and 'tool_calls' in message.additional_kwargs:
-                        # Format tool calls like AgentScope
-                        for tool_call in message.additional_kwargs['tool_calls']:
-                            try:
-                                arguments = json.loads(tool_call['function']['arguments']) if isinstance(tool_call['function']['arguments'], str) else tool_call['function']['arguments']
-                            except:
-                                arguments = tool_call['function']['arguments']
-                            
-                            assistant_chat_content.append({
-                                "type": "tool_use",
-                                "id": tool_call['id'],
-                                "name": tool_call['function']['name'],
-                                "input": arguments
-                            })
-                    
-                    # Save assistant message with both thinking and tool calls
-                    if assistant_chat_content:
-                        assistant_message = {
-                            "name": question['question_id'],
-                            "role": "assistant",
-                            "content": assistant_chat_content,
-                            "metadata": None
-                        }
-                        save_chat_message(chat_log_path, assistant_message)
-                
-                elif message.type == 'tool':
-                    # Tool result message
-                    tool_result_message = {
-                        "name": "system",
-                        "role": "system",
-                        "content": [{
-                            "type": "tool_result",
-                            "id": getattr(message, 'tool_call_id', 'unknown'),
-                            "output": [{"type": "text", "text": str(message.content), "annotations": None, "meta": None}],
-                            "name": message.name
-                        }],
-                        "metadata": None
-                    }
-                    save_chat_message(chat_log_path, tool_result_message)
-        
-        # Log the conversation in the same format as original code
+        # Log the conversation in the same format as original code (only to .log file)
         logger.info("Chat Content", question['question_id'], conversation_log, final_answer)
         
         print(f"Final Answer: {final_answer}")
@@ -376,44 +360,76 @@ async def handle_question(agent, question, chat_log_path):
     except Exception as e:
         error_msg = f"Error processing question {question['question_id']}: {e}"
         print(error_msg)
-        
-        # Save error to chat log
-        error_message = {
-            "name": "system",
-            "role": "system",
-            "content": [{"type": "text", "content": error_msg}],
-            "metadata": {"error": True, "question_id": question['question_id']}
-        }
-        save_chat_message(chat_log_path, error_message)
-        
+
         logger.info(question['question_id'], [], error_msg)
         return f"Error: {e}"
 
 
 async def main():
     """Main evaluation function"""
-    print("Initializing LangChain-based Earth Science Agent...")
-    
+    # Parse command line arguments
+    args = parse_args()
+
+    # Load enhanced config (required)
+    load_enhanced_config(args.enhanced_config)
+
+    print(f"\n{'='*80}")
+    print("Initializing Enhanced Earth Science Agent")
+    print(f"{'='*80}\n")
+
     # Initialize global parameters
-    init_global_params()
-    
-    # Initialize chat logger
-    chat_log_path = init_chat_logger()
-    print(f"Chat log will be saved to: {chat_log_path}")
-    
+    init_global_params(batch_dir=args.batch_dir)
+
+    # Initialize chat logger - removed, only keep .log files
+    # chat_log_path = init_chat_logger()
+
+    print(f"Output directory: {temp_dir_path}")
+    if args.batch_dir:
+        print(f"Batch mode: Processing specific question subset")
+    print(f"Mode: Enhanced with {num_experiences} learned experiences\n")
+
     # Load configuration and create agent
     llm, mcp_servers = load_langchain_config()
     agent, client = await create_langchain_agent(llm, mcp_servers)
     
     try:
         # Load questions
-        questions = load_questions()[0:188]  # First 100 questions for testing
-        print(f"Loaded {len(questions)} questions for evaluation")
+        all_questions = load_questions()
+
+        # Evaluation question IDs (188 questions - excluding 60 training questions)
+        target_question_ids = [
+            '1', '5', '6', '7', '9', '13', '14', '15', '16', '18', '20', '22', '24', '25', '26',
+            '27', '29', '31', '32', '34', '35', '36', '37', '38', '39', '41', '42', '44', '46',
+            '47', '48', '49', '50', '51', '52', '54', '56', '57', '58', '59', '60', '61', '62',
+            '63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76',
+            '77', '78', '79', '81', '82', '83', '84', '85', '86', '87', '88', '89', '90', '91',
+            '92', '93', '94', '95', '96', '97', '98', '99', '100', '101', '103', '104', '105',
+            '106', '108', '111', '113', '115', '117', '118', '120', '122', '123', '124', '126',
+            '127', '128', '129', '130', '131', '132', '133', '134', '135', '139', '140', '141',
+            '142', '143', '144', '145', '146', '147', '148', '150', '151', '152', '153', '154',
+            '156', '157', '158', '159', '160', '162', '163', '164', '165', '166', '167', '168',
+            '169', '170', '171', '172', '174', '175', '177', '178', '179', '180', '181', '182',
+            '183', '184', '185', '188', '189', '192', '193', '194', '196', '197', '198', '199',
+            '200', '201', '204', '205', '206', '207', '211', '212', '213', '214', '216', '217',
+            '219', '220', '221', '222', '226', '227', '230', '232', '234', '235', '237', '238',
+            '239', '240', '241', '243', '245', '246', '247', '248'
+        ]
+
+        # If specific question IDs are provided, use them; otherwise use all
+        if args.question_ids:
+            target_question_ids = args.question_ids
+            print(f"Batch mode: Evaluating {len(target_question_ids)} specific questions")
+
+        # Filter questions based on target IDs
+        questions = [q for q in all_questions if q['question_id'] in target_question_ids]
+
+        print(f"Loaded {len(questions)} questions for evaluation (out of {len(all_questions)} total)")
         
         # Process questions
         results = []
         for question in tqdm(questions, desc="Processing questions"):
-            answer = await handle_question(agent, question, chat_log_path)
+            # Removed chat_log_path parameter
+            answer = await handle_question(agent, question, None)
             results.append({
                 "question_id": question['question_id'],
                 "answer": answer
@@ -429,7 +445,6 @@ async def main():
         
         print(f"\nEvaluation completed! Results saved to {results_path}")
         print(f"Detailed logs available at: {temp_dir_path}")
-        print(f"Chat history saved to: {chat_log_path}")
         
     except Exception as e:
         print(f"Error in main evaluation: {e}")
